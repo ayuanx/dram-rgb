@@ -1,3 +1,4 @@
+#![windows_subsystem = "windows"]
 #![cfg_attr(not(target_os = "windows"), allow(dead_code))]
 
 #[cfg(not(target_os = "windows"))]
@@ -9,6 +10,7 @@ use std::io;
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 use std::ptr::{null, null_mut};
+use winrt_notification::{Duration, Toast};
 
 type Handle = *mut c_void;
 type Hkey = *mut c_void;
@@ -112,6 +114,11 @@ struct EneProfile {
     name: String,
     led_count: u8,
     direct_register: u16,
+}
+
+struct Notification {
+    title: &'static str,
+    message: String,
 }
 
 struct CtiIo {
@@ -218,6 +225,21 @@ impl Drop for CtiIo {
 
 fn wide(value: impl AsRef<OsStr>) -> Vec<u16> {
     value.as_ref().encode_wide().chain(Some(0)).collect()
+}
+
+fn show_notification(title: &str, message: &str) -> winrt_notification::Result<()> {
+    let mut lines = message.lines();
+    let first_line = lines.next().unwrap_or(message);
+    let remaining_lines = lines.collect::<Vec<_>>().join("\n");
+    let mut toast = Toast::new(Toast::POWERSHELL_APP_ID)
+        .title(title)
+        .text1(first_line)
+        .duration(Duration::Short)
+        .sound(None);
+    if !remaining_lines.is_empty() {
+        toast = toast.text2(&remaining_lines);
+    }
+    toast.show()
 }
 
 fn packet(controller: u8, address: u8, command: u8, value: u64) -> [u8; 12] {
@@ -496,9 +518,9 @@ fn startup_command(executable: &Path, action: StartupAction) -> Vec<u16> {
     let mut command = OsString::from("\"");
     command.push(executable.as_os_str());
     match action {
-        StartupAction::Off => command.push("\" off"),
+        StartupAction::Off => command.push("\" off --silent"),
         StartupAction::Set(red, green, blue) => {
-            command.push(format!("\" set {red} {green} {blue}"));
+            command.push(format!("\" set {red} {green} {blue} --silent"));
         }
     }
     wide(command)
@@ -552,39 +574,38 @@ fn register_startup(action: StartupAction) -> Result<(), String> {
         ));
     }
 
-    println!(
-        "Startup enabled: {:?} will run the selected action after you sign in to Windows.",
-        executable
-    );
     Ok(())
 }
 
-fn parse_startup_flag(arguments: &mut impl Iterator<Item = String>) -> Result<bool, String> {
-    match arguments.next() {
-        None => Ok(false),
-        Some(argument) if argument == "--startup" => {
-            if let Some(extra) = arguments.next() {
-                Err(format!("unexpected argument: {extra}"))
-            } else {
-                Ok(true)
-            }
+#[derive(Default)]
+struct ActionOptions {
+    startup: bool,
+    silent: bool,
+}
+
+fn parse_action_options(
+    arguments: &mut impl Iterator<Item = String>,
+) -> Result<ActionOptions, String> {
+    let mut options = ActionOptions::default();
+    for argument in arguments {
+        match argument.as_str() {
+            "--startup" if !options.startup => options.startup = true,
+            "--silent" if !options.silent => options.silent = true,
+            "--startup" | "--silent" => return Err(format!("duplicate argument: {argument}")),
+            _ => return Err(format!("unexpected argument: {argument}")),
         }
-        Some(argument) => Err(format!("unexpected argument: {argument}")),
     }
+    Ok(options)
 }
 
-fn print_help() {
-    println!(
-        "dram-rgb - direct ENE DRAM RGB control through CTIIO\n\n\
-         Usage:\n\
-           dram-rgb list          Detect ENE DRAM modules (read-only)\n\
-           dram-rgb off [--startup]       Turn off LEDs; optionally repeat after sign-in\n\
-           dram-rgb set R G B [--startup] Set a solid color; optionally repeat after sign-in\n\
-           dram-rgb driver-status Open CTIIO and show its SMBus type"
-    );
+fn help_text() -> &'static str {
+    "list\n\
+     off [--startup] [--silent]\n\
+     set R G B [--startup] [--silent]\n\
+     driver-status"
 }
 
-fn run() -> Result<(), String> {
+fn run() -> Result<Notification, String> {
     let mut arguments = env::args().skip(1);
     let command = arguments.next().unwrap_or_else(|| "help".to_owned());
 
@@ -593,24 +614,34 @@ fn run() -> Result<(), String> {
             let driver = open_driver()?;
             let devices = scan(&driver);
             if devices.is_empty() {
-                println!("No ENE DRAM controller detected.");
+                Ok(Notification {
+                    title: "DRAM modules",
+                    message: "No ENE DRAM controller detected.".to_owned(),
+                })
             } else {
+                let mut messages = Vec::new();
                 for (index, device) in devices.iter().enumerate() {
-                    println!(
+                    messages.push(format!(
                         "[{}] ENE DRAM: ctl={} SMBus=0x{:02X}",
                         index, device.controller, device.address
-                    );
+                    ));
                 }
+                Ok(Notification {
+                    title: "DRAM modules detected",
+                    message: messages.join("\n"),
+                })
             }
-            Ok(())
         }
         "off" => {
-            let startup = parse_startup_flag(&mut arguments)?;
+            let options = parse_action_options(&mut arguments)?;
 
             let driver = open_driver()?;
             let remapped = remap_unassigned_modules(&driver)?;
+            let mut messages = Vec::new();
             if remapped != 0 {
-                println!("Remapped {remapped} unassigned ENE DRAM module(s).");
+                messages.push(format!(
+                    "Remapped {remapped} unassigned ENE DRAM module(s)."
+                ));
             }
 
             let devices = scan(&driver);
@@ -620,27 +651,34 @@ fn run() -> Result<(), String> {
 
             for device in &devices {
                 turn_off(&driver, *device)?;
-                println!(
+                messages.push(format!(
                     "Off: ENE DRAM ctl={} SMBus=0x{:02X}",
                     device.controller, device.address
-                );
+                ));
             }
-            println!("Done: {} module(s) verified off.", devices.len());
-            if startup {
+            messages.push(format!("Done: {} module(s) verified off.", devices.len()));
+            if options.startup {
                 register_startup(StartupAction::Off)?;
+                messages.push("Startup enabled for the current user.".to_owned());
             }
-            Ok(())
+            Ok(Notification {
+                title: "DRAM lighting off",
+                message: messages.join("\n"),
+            })
         }
         "set" => {
             let red = parse_color_component(arguments.next(), "red")?;
             let green = parse_color_component(arguments.next(), "green")?;
             let blue = parse_color_component(arguments.next(), "blue")?;
-            let startup = parse_startup_flag(&mut arguments)?;
+            let options = parse_action_options(&mut arguments)?;
 
             let driver = open_driver()?;
             let remapped = remap_unassigned_modules(&driver)?;
+            let mut messages = Vec::new();
             if remapped != 0 {
-                println!("Remapped {remapped} unassigned ENE DRAM module(s).");
+                messages.push(format!(
+                    "Remapped {remapped} unassigned ENE DRAM module(s)."
+                ));
             }
 
             let devices = scan(&driver);
@@ -650,40 +688,55 @@ fn run() -> Result<(), String> {
 
             for device in &devices {
                 let profile = set_solid_color(&driver, *device, red, green, blue)?;
-                println!(
+                messages.push(format!(
                     "Set: {} ctl={} SMBus=0x{:02X} LEDs={} RGB=({red},{green},{blue})",
                     profile.name, device.controller, device.address, profile.led_count
-                );
+                ));
             }
-            println!("Done: {} module(s) verified.", devices.len());
-            if startup {
+            messages.push(format!("Done: {} module(s) verified.", devices.len()));
+            if options.startup {
                 register_startup(StartupAction::Set(red, green, blue))?;
+                messages.push("Startup enabled for the current user.".to_owned());
             }
-            Ok(())
+            Ok(Notification {
+                title: "DRAM lighting updated",
+                message: messages.join("\n"),
+            })
         }
         "driver-status" => {
             let driver = open_driver()?;
             let smbus_type = driver
                 .smbus_type()
                 .map_err(|error| format!("failed to query SMBus type: {error}"))?;
-            println!("CTIIO is ready; SMBus type=0x{smbus_type:02X}");
-            Ok(())
+            Ok(Notification {
+                title: "CTIIO driver status",
+                message: format!("CTIIO is ready; SMBus type=0x{smbus_type:02X}"),
+            })
         }
-        "help" | "--help" | "-h" => {
-            print_help();
-            Ok(())
-        }
-        _ => {
-            print_help();
-            Err(format!("unknown command: {command}"))
-        }
+        "help" | "--help" | "-h" => Ok(Notification {
+            title: "dram-rgb commands",
+            message: help_text().to_owned(),
+        }),
+        _ => Err(format!("unknown command: {command}\n\n{}", help_text())),
     }
 }
 
 fn main() {
-    if let Err(error) = run() {
-        eprintln!("error: {error}");
-        std::process::exit(1);
+    let silent = env::args_os().any(|argument| argument == "--silent");
+    let exit_code = match run() {
+        Ok(notification) if !silent => show_notification(notification.title, &notification.message)
+            .err()
+            .map_or(0, |_| 2),
+        Ok(_) => 0,
+        Err(error) => {
+            if !silent {
+                show_notification("dram-rgb error", &error).ok();
+            }
+            1
+        }
+    };
+    if exit_code != 0 {
+        std::process::exit(exit_code);
     }
 }
 
@@ -695,7 +748,7 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn startup_command_quotes_executable_path_and_omits_startup_flag() {
+    fn startup_command_quotes_executable_path_and_runs_silently() {
         let command = startup_command(
             Path::new(r"C:\Program Files\灯光\dram-rgb.exe"),
             StartupAction::Off,
@@ -704,7 +757,7 @@ mod tests {
 
         assert_eq!(
             command,
-            OsString::from(r#""C:\Program Files\灯光\dram-rgb.exe" off"#)
+            OsString::from(r#""C:\Program Files\灯光\dram-rgb.exe" off --silent"#)
         );
     }
 
@@ -716,6 +769,9 @@ mod tests {
         );
         let command = OsString::from_wide(&command[..command.len() - 1]);
 
-        assert_eq!(command, OsString::from(r#""C:\dram-rgb.exe" set 255 16 0"#));
+        assert_eq!(
+            command,
+            OsString::from(r#""C:\dram-rgb.exe" set 255 16 0 --silent"#)
+        );
     }
 }

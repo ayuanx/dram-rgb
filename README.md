@@ -37,7 +37,12 @@ The startup entry points to the executable's current absolute path. Move the
 executable first if it will be installed somewhere else. The entry is stored
 for the current user under
 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` and does not require
-administrator privileges.
+administrator privileges. The executable uses the Windows GUI subsystem, so
+Windows does not create a terminal window when it is launched at sign-in.
+Command results and errors are shown in a native Windows notification banner
+through the WinRT toast API instead of being written to a terminal. Toasts are
+silent and use the short system duration. Runs launched automatically at
+sign-in do not show a notification.
 
 Set every detected module to a solid RGB color using decimal values from 0 to
 255:
@@ -51,6 +56,10 @@ Add `--startup` to apply the color now and again after Windows sign-in:
 ```powershell
 .\target\release\dram-rgb.exe set 255 0 0 --startup
 ```
+
+Add `--silent` to `off` or `set` to suppress the notification for that run.
+`--startup` and `--silent` can be used together. Startup entries always invoke
+the selected action with `--silent`.
 
 There is one `dram-rgb` startup entry per user, so the most recent successful
 `off --startup` or `set R G B --startup` command replaces the previous startup
