@@ -26,12 +26,35 @@ Turn off every detected ENE DRAM module:
 .\target\release\dram-rgb.exe off
 ```
 
+Turn the modules off now and register the same command to run automatically
+after the current user signs in to Windows:
+
+```powershell
+.\target\release\dram-rgb.exe off --startup
+```
+
+The startup entry points to the executable's current absolute path. Move the
+executable first if it will be installed somewhere else. The entry is stored
+for the current user under
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` and does not require
+administrator privileges.
+
 Set every detected module to a solid RGB color using decimal values from 0 to
 255:
 
 ```powershell
 .\target\release\dram-rgb.exe set 255 0 0
 ```
+
+Add `--startup` to apply the color now and again after Windows sign-in:
+
+```powershell
+.\target\release\dram-rgb.exe set 255 0 0 --startup
+```
+
+There is one `dram-rgb` startup entry per user, so the most recent successful
+`off --startup` or `set R G B --startup` command replaces the previous startup
+action.
 
 Check whether CTIIO is available:
 

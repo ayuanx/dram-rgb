@@ -4,18 +4,25 @@
 compile_error!("dram-rgb only supports Windows.");
 
 use std::env;
-use std::ffi::{OsStr, c_void};
+use std::ffi::{OsStr, OsString, c_void};
 use std::io;
 use std::os::windows::ffi::OsStrExt;
+use std::path::Path;
 use std::ptr::{null, null_mut};
 
 type Handle = *mut c_void;
+type Hkey = *mut c_void;
 
 const INVALID_HANDLE_VALUE: Handle = usize::MAX as Handle;
+const HKEY_CURRENT_USER: Hkey = -2_147_483_647isize as Hkey;
 const GENERIC_READ: u32 = 0x8000_0000;
 const GENERIC_WRITE: u32 = 0x4000_0000;
 const OPEN_EXISTING: u32 = 3;
 const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
+const KEY_SET_VALUE: u32 = 0x0002;
+const REG_SZ: u32 = 1;
+const WINDOWS_RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+const STARTUP_VALUE_NAME: &str = "dram-rgb";
 
 const IOCTL_READ_SMB_TYPE: u32 = 0x8050_2140;
 const IOCTL_READ_SMB_QUICK: u32 = 0x8050_2144;
@@ -67,6 +74,32 @@ unsafe extern "system" {
     ) -> i32;
 
     fn CloseHandle(object: Handle) -> i32;
+}
+
+#[link(name = "advapi32")]
+unsafe extern "system" {
+    fn RegCreateKeyExW(
+        key: Hkey,
+        sub_key: *const u16,
+        reserved: u32,
+        class: *mut u16,
+        options: u32,
+        desired_access: u32,
+        security_attributes: *const c_void,
+        result: *mut Hkey,
+        disposition: *mut u32,
+    ) -> i32;
+
+    fn RegSetValueExW(
+        key: Hkey,
+        value_name: *const u16,
+        reserved: u32,
+        value_type: u32,
+        data: *const u8,
+        data_size: u32,
+    ) -> i32;
+
+    fn RegCloseKey(key: Hkey) -> i32;
 }
 
 #[derive(Clone, Copy)]
@@ -453,13 +486,100 @@ fn open_driver() -> Result<CtiIo, String> {
     })
 }
 
+#[derive(Clone, Copy)]
+enum StartupAction {
+    Off,
+    Set(u8, u8, u8),
+}
+
+fn startup_command(executable: &Path, action: StartupAction) -> Vec<u16> {
+    let mut command = OsString::from("\"");
+    command.push(executable.as_os_str());
+    match action {
+        StartupAction::Off => command.push("\" off"),
+        StartupAction::Set(red, green, blue) => {
+            command.push(format!("\" set {red} {green} {blue}"));
+        }
+    }
+    wide(command)
+}
+
+fn register_startup(action: StartupAction) -> Result<(), String> {
+    let executable =
+        env::current_exe().map_err(|error| format!("cannot locate current executable: {error}"))?;
+    let sub_key = wide(WINDOWS_RUN_KEY);
+    let value_name = wide(STARTUP_VALUE_NAME);
+    let command = startup_command(&executable, action);
+    let mut key = null_mut();
+
+    let status = unsafe {
+        RegCreateKeyExW(
+            HKEY_CURRENT_USER,
+            sub_key.as_ptr(),
+            0,
+            null_mut(),
+            0,
+            KEY_SET_VALUE,
+            null(),
+            &mut key,
+            null_mut(),
+        )
+    };
+    if status != 0 {
+        return Err(format!(
+            "cannot open current-user startup registry key: {}",
+            io::Error::from_raw_os_error(status)
+        ));
+    }
+
+    let status = unsafe {
+        RegSetValueExW(
+            key,
+            value_name.as_ptr(),
+            0,
+            REG_SZ,
+            command.as_ptr().cast::<u8>(),
+            (command.len() * size_of::<u16>()) as u32,
+        )
+    };
+    unsafe {
+        RegCloseKey(key);
+    }
+    if status != 0 {
+        return Err(format!(
+            "cannot register current-user startup command: {}",
+            io::Error::from_raw_os_error(status)
+        ));
+    }
+
+    println!(
+        "Startup enabled: {:?} will run the selected action after you sign in to Windows.",
+        executable
+    );
+    Ok(())
+}
+
+fn parse_startup_flag(arguments: &mut impl Iterator<Item = String>) -> Result<bool, String> {
+    match arguments.next() {
+        None => Ok(false),
+        Some(argument) if argument == "--startup" => {
+            if let Some(extra) = arguments.next() {
+                Err(format!("unexpected argument: {extra}"))
+            } else {
+                Ok(true)
+            }
+        }
+        Some(argument) => Err(format!("unexpected argument: {argument}")),
+    }
+}
+
 fn print_help() {
     println!(
         "dram-rgb - direct ENE DRAM RGB control through CTIIO\n\n\
          Usage:\n\
            dram-rgb list          Detect ENE DRAM modules (read-only)\n\
-           dram-rgb off           Turn off all detected ENE DRAM LEDs\n\
-           dram-rgb set R G B     Set a solid RGB color (0-255 per component)\n\
+           dram-rgb off [--startup]       Turn off LEDs; optionally repeat after sign-in\n\
+           dram-rgb set R G B [--startup] Set a solid color; optionally repeat after sign-in\n\
            dram-rgb driver-status Open CTIIO and show its SMBus type"
     );
 }
@@ -485,6 +605,8 @@ fn run() -> Result<(), String> {
             Ok(())
         }
         "off" => {
+            let startup = parse_startup_flag(&mut arguments)?;
+
             let driver = open_driver()?;
             let remapped = remap_unassigned_modules(&driver)?;
             if remapped != 0 {
@@ -504,15 +626,16 @@ fn run() -> Result<(), String> {
                 );
             }
             println!("Done: {} module(s) verified off.", devices.len());
+            if startup {
+                register_startup(StartupAction::Off)?;
+            }
             Ok(())
         }
         "set" => {
             let red = parse_color_component(arguments.next(), "red")?;
             let green = parse_color_component(arguments.next(), "green")?;
             let blue = parse_color_component(arguments.next(), "blue")?;
-            if let Some(extra) = arguments.next() {
-                return Err(format!("unexpected argument: {extra}"));
-            }
+            let startup = parse_startup_flag(&mut arguments)?;
 
             let driver = open_driver()?;
             let remapped = remap_unassigned_modules(&driver)?;
@@ -533,6 +656,9 @@ fn run() -> Result<(), String> {
                 );
             }
             println!("Done: {} module(s) verified.", devices.len());
+            if startup {
+                register_startup(StartupAction::Set(red, green, blue))?;
+            }
             Ok(())
         }
         "driver-status" => {
@@ -558,5 +684,38 @@ fn main() {
     if let Err(error) = run() {
         eprintln!("error: {error}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{StartupAction, startup_command};
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+    use std::path::Path;
+
+    #[test]
+    fn startup_command_quotes_executable_path_and_omits_startup_flag() {
+        let command = startup_command(
+            Path::new(r"C:\Program Files\灯光\dram-rgb.exe"),
+            StartupAction::Off,
+        );
+        let command = OsString::from_wide(&command[..command.len() - 1]);
+
+        assert_eq!(
+            command,
+            OsString::from(r#""C:\Program Files\灯光\dram-rgb.exe" off"#)
+        );
+    }
+
+    #[test]
+    fn startup_command_preserves_solid_color() {
+        let command = startup_command(
+            Path::new(r"C:\dram-rgb.exe"),
+            StartupAction::Set(255, 16, 0),
+        );
+        let command = OsString::from_wide(&command[..command.len() - 1]);
+
+        assert_eq!(command, OsString::from(r#""C:\dram-rgb.exe" set 255 16 0"#));
     }
 }
