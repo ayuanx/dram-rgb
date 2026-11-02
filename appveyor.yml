@@ -1,0 +1,34 @@
+# Build worker image (Visual Studio 2022 contains modern MSVC linkers)
+image: Visual Studio 2022
+
+environment:
+  matrix:
+    # Stable 64-bit Windows
+    - TARGET: x86_64-pc-windows-msvc
+      CHANNEL: stable
+    # Stable 32-bit Windows
+    - TARGET: i686-pc-windows-msvc
+      CHANNEL: stable
+
+# Cache Cargo dependencies to speed up subsequent builds
+cache:
+  - 'C:\Users\appveyor\.cargo\registry\cache'
+  - 'target'
+
+install:
+  # Download and run rustup-init to set up Rust
+  - appveyor-retry appveyor DownloadFile https://win.rustup.rs/ -FileName rustup-init.exe
+  - rustup-init.exe -y --default-host %TARGET% --default-toolchain %CHANNEL%
+  # Add cargo bin to system PATH
+  - set PATH=%PATH%;C:\Users\appveyor\.cargo\bin
+  # Verify installation
+  - rustc -V
+  - cargo -V
+
+# CRITICAL: Disable AppVeyor's default MSBuild routine
+build: false
+
+# Execute build and tests inside the test_script phase
+test_script:
+  - cargo build --verbose
+  - cargo test --verbose
