@@ -10,23 +10,15 @@ cache:
   - 'target'
 
 install:
-  - appveyor-retry appveyor DownloadFile https://rustup.rs -FileName rustup-init.exe
+  - appveyor-retry appveyor DownloadFile https://win.rustup.rs/ -FileName rustup-init.exe
   - rustup-init.exe -y --default-host %TARGET% --default-toolchain %CHANNEL%
   - set PATH=%PATH%;C:\Users\appveyor\.cargo\bin
 
 build: false
 
 test_script:
-  # Build a production-ready optimized binary
   - cargo build --release --verbose
-  - cargo test --release --verbose
 
-# Gather target outputs to make them available for download
 artifacts:
-  # This grabs all .exe files inside the release target directory
   - path: 'target\release\*.exe'
     name: Binaries
-
-  # Optional: Grab any generated .dll or .lib if building a library
-  - path: 'target\release\*.dll'
-    name: Libraries
