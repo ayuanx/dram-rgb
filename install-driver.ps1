@@ -6,8 +6,8 @@ param()
 
 $ErrorActionPreference = 'Stop'
 $expectedHash = '43599EBC5CA92A17DFCFAC6DEB129F8B8FDE91CACB385FFEEE2768113DA7E2EB'
-$source = Join-Path $PSScriptRoot 'vendor\ene\CtiIo64.sys'
-$destination = Join-Path $env:WINDIR 'System32\drivers\CtiIo64.sys'
+$source = Join-Path $PSScriptRoot 'CtiIO64.sys'
+$destination = Join-Path $env:WINDIR 'CtiIO64.sys'
 
 if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
     throw "Bundled driver not found: $source"

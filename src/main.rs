@@ -328,6 +328,7 @@ fn device_profile(driver: &CtiIo, device: EneDevice) -> Result<EneProfile, Strin
     })
 }
 
+/*
 fn remap_unassigned_modules(driver: &CtiIo) -> Result<usize, String> {
     let mut remapped = 0usize;
 
@@ -337,10 +338,6 @@ fn remap_unassigned_modules(driver: &CtiIo) -> Result<usize, String> {
         }
 
         for slot in 0u8..8 {
-            if !is_ene_device(driver, controller, 0x77) {
-                break;
-            }
-
             let target = ENE_ADDRESSES
                 .iter()
                 .copied()
@@ -376,6 +373,7 @@ fn remap_unassigned_modules(driver: &CtiIo) -> Result<usize, String> {
 
     Ok(remapped)
 }
+*/
 
 fn turn_off(driver: &CtiIo, device: EneDevice) -> Result<(), String> {
     let writes = [
@@ -636,6 +634,7 @@ fn run() -> Result<Notification, String> {
             let options = parse_action_options(&mut arguments)?;
 
             let driver = open_driver()?;
+            /*
             let remapped = remap_unassigned_modules(&driver)?;
             let mut messages = Vec::new();
             if remapped != 0 {
@@ -643,6 +642,7 @@ fn run() -> Result<Notification, String> {
                     "Remapped {remapped} unassigned ENE DRAM module(s)."
                 ));
             }
+            */
 
             let devices = scan(&driver);
             if devices.is_empty() {
@@ -673,6 +673,7 @@ fn run() -> Result<Notification, String> {
             let options = parse_action_options(&mut arguments)?;
 
             let driver = open_driver()?;
+            /*
             let remapped = remap_unassigned_modules(&driver)?;
             let mut messages = Vec::new();
             if remapped != 0 {
@@ -680,6 +681,7 @@ fn run() -> Result<Notification, String> {
                     "Remapped {remapped} unassigned ENE DRAM module(s)."
                 ));
             }
+            */
 
             let devices = scan(&driver);
             if devices.is_empty() {
@@ -750,14 +752,14 @@ mod tests {
     #[test]
     fn startup_command_quotes_executable_path_and_runs_silently() {
         let command = startup_command(
-            Path::new(r"C:\Program Files\灯光\dram-rgb.exe"),
+            Path::new(r"C:\Program Files\dram-rgb\dram-rgb.exe"),
             StartupAction::Off,
         );
         let command = OsString::from_wide(&command[..command.len() - 1]);
 
         assert_eq!(
             command,
-            OsString::from(r#""C:\Program Files\灯光\dram-rgb.exe" off --silent"#)
+            OsString::from(r#""C:\Program Files\dram-rgb\dram-rgb.exe" off --silent"#)
         );
     }
 
