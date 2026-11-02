@@ -365,9 +365,12 @@ fn remap_unassigned_modules(driver: &CtiIo) -> Result<usize, String> {
                     )
                 })?;
 
-            if is_ene_device(driver, controller, target) {
-                remapped += 1;.
+            if !is_ene_device(driver, controller, target) {
+                return Err(format!(
+                    "controller {controller}: slot {slot} did not respond at 0x{target:02X}"
+                ));
             }
+            remapped += 1;
         }
     }
 
