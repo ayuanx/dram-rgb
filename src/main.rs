@@ -27,7 +27,9 @@ const WINDOWS_RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const STARTUP_VALUE_NAME: &str = "dram-rgb";
 
 const IOCTL_READ_SMB_TYPE: u32 = 0x8050_2140;
+/*
 const IOCTL_READ_SMB_QUICK: u32 = 0x8050_2144;
+*/
 const IOCTL_READ_SMB_BYTE: u32 = 0x8050_2148;
 const IOCTL_WRITE_SMB_BYTE: u32 = 0x8050_214C;
 const IOCTL_WRITE_SMB_WORD: u32 = 0x8050_2154;
@@ -41,8 +43,10 @@ const ENE_REG_MODE: u16 = 0x8021;
 const ENE_REG_SPEED: u16 = 0x8022;
 const ENE_REG_DIRECTION: u16 = 0x8023;
 const ENE_REG_APPLY: u16 = 0x80A0;
+/*
 const ENE_REG_SLOT_INDEX: u16 = 0x80F8;
 const ENE_REG_I2C_ADDRESS: u16 = 0x80F9;
+*/
 const ENE_APPLY: u8 = 0x01;
 const ENE_MODE_OFF: u8 = 0x00;
 const ENE_CONFIG_LED_COUNT: u16 = 0x02;
@@ -180,10 +184,12 @@ impl CtiIo {
         Ok(output[0])
     }
 
+    /*
     fn quick(&self, controller: u8, address: u8) -> bool {
         let input = packet(controller, address, 0, 0);
         self.ioctl(IOCTL_READ_SMB_QUICK, &input, None).is_ok()
     }
+    */
 
     fn read_byte(&self, controller: u8, address: u8, command: u8) -> io::Result<u8> {
         let input = packet(controller, address, command, 0);
