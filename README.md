@@ -76,7 +76,7 @@ driver, the command fails instead of writing to SMBus concurrently.
 
 ## Driver
 
-`vendor\ene\CtiIo64.sys` is the CTIIO x64 kernel driver used by ENE RGB
+`CtiIO64.sys` is the CTIIO x64 kernel driver used by ENE RGB
 software. This project calls its user-mode device interface directly and does
 not use the ENE HAL DLL.
 

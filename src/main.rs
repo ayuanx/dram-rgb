@@ -605,6 +605,7 @@ fn help_text() -> &'static str {
 
 fn run() -> Result<Notification, String> {
     let mut arguments = env::args().skip(1);
+    let mut messages = Vec::new();
     let command = arguments.next().unwrap_or_else(|| "help".to_owned());
 
     match command.as_str() {
@@ -617,7 +618,6 @@ fn run() -> Result<Notification, String> {
                     message: "No ENE DRAM controller detected.".to_owned(),
                 })
             } else {
-                let mut messages = Vec::new();
                 for (index, device) in devices.iter().enumerate() {
                     messages.push(format!(
                         "[{}] ENE DRAM: ctl={} SMBus=0x{:02X}",
@@ -632,11 +632,9 @@ fn run() -> Result<Notification, String> {
         }
         "off" => {
             let options = parse_action_options(&mut arguments)?;
-
             let driver = open_driver()?;
             /*
             let remapped = remap_unassigned_modules(&driver)?;
-            let mut messages = Vec::new();
             if remapped != 0 {
                 messages.push(format!(
                     "Remapped {remapped} unassigned ENE DRAM module(s)."
@@ -675,7 +673,6 @@ fn run() -> Result<Notification, String> {
             let driver = open_driver()?;
             /*
             let remapped = remap_unassigned_modules(&driver)?;
-            let mut messages = Vec::new();
             if remapped != 0 {
                 messages.push(format!(
                     "Remapped {remapped} unassigned ENE DRAM module(s)."
