@@ -715,7 +715,7 @@ fn run() -> Result<Notification, String> {
                 .map_err(|error| format!("failed to query SMBus type: {error}"))?;
             Ok(Notification {
                 title: "CTIIO driver status",
-                message: format!("CTIIO is ready; SMBus type=0x{smbus_type:02X}", smbus_type),
+                message: format!("CTIIO is ready; SMBus type=0x{smbus_type:02X}"),
             })
         }
         "help" | "--help" | "-h" => Ok(Notification {
