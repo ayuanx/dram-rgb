@@ -65,14 +65,14 @@ There is one `dram-rgb` startup entry per user, so the most recent successful
 `off --startup` or `set R G B --startup` command replaces the previous startup
 action.
 
-Check whether CTIIO is available:
+Check whether CTIIO driver is available:
 
 ```powershell
 .\target\release\dram-rgb.exe driver-status
 ```
 
-The program opens CTIIO exclusively. If another RGB application is using the
-driver, the command fails instead of writing to SMBus concurrently.
+The program opens CTIIO driver exclusively. If another RGB application is using
+the driver, the command fails instead of writing to SMBus concurrently.
 
 ## Driver
 
@@ -80,8 +80,8 @@ driver, the command fails instead of writing to SMBus concurrently.
 software. This project calls its user-mode device interface directly and does
 not use the ENE HAL DLL.
 
-If CTIIO is already installed, no installation step is required. On a system
-without CTIIO, run the following command as Administrator:
+If CTIIO driver is already installed, no installation step is required.
+On a system without CTIIO driver, run the following command as Administrator:
 
 ```powershell
 .\install-driver.ps1
@@ -90,6 +90,12 @@ without CTIIO, run the following command as Administrator:
 The installer accepts only the bundled driver with the documented SHA-256 and
 a valid Authenticode signature. It refuses to overwrite an existing CTIIO
 service or driver with a different version.
+
+To uninstall CTIIO driver, run the following command as Administrator:
+
+```powershell
+.\uninstall-driver.ps1
+```
 
 The ENE/CTIIO binary is not an open-source component and is not covered by the
 source-code license. Confirm the applicable ENE/CTI redistribution terms before
